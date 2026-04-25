@@ -106,6 +106,11 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+# All run steps default to the app subfolder
+defaults:
+  run:
+    working-directory: LostFoundPortal
+
 jobs:
   # ─────────────────────────────────────────────
   # STAGE 1 — Build
@@ -113,6 +118,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -122,6 +128,7 @@ jobs:
         with:
           node-version: 20.x
           cache: "npm"
+          cache-dependency-path: LostFoundPortal/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -129,27 +136,24 @@ jobs:
       - name: Lint (ESLint + Prettier)
         run: |
           npm run lint
-          npx prettier --check "src/**/*.{js,jsx,ts,tsx}"
+          npx prettier --check "src/**/*.{ts,tsx,js,jsx}"
 
-      - name: Build application
+      - name: Build application (Vite)
         run: npm run build
         env:
-          CI: true
-          PUBLIC_URL: /UniLostAndFoundPortal
+          # Vite reads BASE_URL for sub-path deployments (GitHub Pages)
+          BASE_URL: /UniLostAndFoundPortal/
 
       - name: Bundle size audit
         run: |
-          echo "=== Build output sizes ==="
-          du -sh build/static/js/*.js 2>/dev/null || du -sh build/static/js/
-          # Fail if main bundle exceeds 500 KB (gzipped estimate)
-          BUNDLE_SIZE=$(find build/static/js -name "main*.js" | xargs wc -c | tail -1 | awk '{print $1}')
-          echo "Main bundle raw size: ${BUNDLE_SIZE} bytes"
+          echo "=== dist/ output sizes ==="
+          find dist/assets -name "*.js" | xargs wc -c 2>/dev/null | sort -rn | head -5 || du -sh dist/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-${{ github.sha }}
-          path: build/
+          path: LostFoundPortal/dist/
           retention-days: 7
 
   # ─────────────────────────────────────────────
@@ -173,38 +177,39 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: "npm"
+          cache-dependency-path: LostFoundPortal/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run unit & integration tests with coverage
-        run: npm test -- --coverage --watchAll=false --coverageReporters=text --coverageReporters=lcov
+      - name: Run tests with coverage
+        run: npm test -- --coverage --watchAll=false
         env:
           CI: true
-
-      - name: Enforce coverage thresholds
-        # Fails the job if Jest coverage drops below thresholds defined in package.json
-        # Add to package.json > jest > coverageThreshold:
-        #   { "global": { "lines": 80, "branches": 75, "functions": 80, "statements": 80 } }
-        run: echo "Coverage thresholds enforced via jest coverageThreshold in package.json"
+        # Enforce thresholds by adding to package.json:
+        # "jest": {
+        #   "coverageThreshold": {
+        #     "global": { "lines": 80, "branches": 75, "functions": 80, "statements": 80 }
+        #   }
+        # }
 
       - name: Upload coverage report
         if: matrix.node-version == '20.x'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage/
+          path: LostFoundPortal/coverage/
           retention-days: 7
 
-      # Uncomment when Codecov token is added as a secret:
+      # Uncomment after adding CODECOV_TOKEN secret:
       # - name: Upload to Codecov
       #   uses: codecov/codecov-action@v4
       #   with:
       #     token: ${{ secrets.CODECOV_TOKEN }}
-      #     files: ./coverage/lcov.info
+      #     files: ./LostFoundPortal/coverage/lcov.info
 
   # ─────────────────────────────────────────────
-  # STAGE 3 — Security Scan
+  # STAGE 3a — Security Scan (parallel with E2E)
   # ─────────────────────────────────────────────
   security-scan:
     name: Security Scan
@@ -219,7 +224,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: "fs"
-          scan-ref: "."
+          scan-ref: "LostFoundPortal"
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"
@@ -235,7 +240,7 @@ jobs:
         continue-on-error: true
 
   # ─────────────────────────────────────────────
-  # STAGE 3 — Staging / E2E Tests
+  # STAGE 3b — Staging / E2E (parallel with security)
   # ─────────────────────────────────────────────
   staging-e2e:
     name: Staging E2E
@@ -251,6 +256,7 @@ jobs:
         with:
           node-version: 20.x
           cache: "npm"
+          cache-dependency-path: LostFoundPortal/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -259,23 +265,21 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-${{ github.sha }}
-          path: build/
-
-      - name: Install Cypress
-        run: npx cypress install
+          path: LostFoundPortal/dist/
 
       - name: Run E2E tests (Cypress)
         uses: cypress-io/github-action@v6
         with:
-          # Serve the production build locally for realistic E2E
-          start: npx serve -s build -l 3000
+          working-directory: LostFoundPortal
+          # Serve the Vite dist/ build locally on port 3000
+          start: npx serve -s dist -l 3000
           wait-on: "http://localhost:3000"
           wait-on-timeout: 30
           browser: chrome
-          # Critical user flows that MUST pass:
-          # - Add a lost/found item (writes to localStorage)
-          # - Reload page and verify item persists (reads from localStorage)
-          # - Delete item (removes from localStorage)
+          # Critical localStorage flows:
+          # - Report item → verify written to localStorage
+          # - Reload page → verify data persists
+          # - Delete item → verify removed from localStorage
           spec: "cypress/e2e/**/*.cy.{js,jsx,ts,tsx}"
         env:
           CYPRESS_BASE_URL: http://localhost:3000
@@ -285,7 +289,7 @@ jobs:
         if: failure()
         with:
           name: cypress-screenshots
-          path: cypress/screenshots/
+          path: LostFoundPortal/cypress/screenshots/
           retention-days: 3
 
       - name: Lighthouse CI audit
@@ -293,15 +297,13 @@ jobs:
         with:
           urls: |
             http://localhost:3000
-          # Minimum performance score: 90
-          # Minimum accessibility score: 90
-          budgetPath: "./.lighthouserc.json"
+          budgetPath: "LostFoundPortal/.lighthouserc.json"
           uploadArtifacts: true
           temporaryPublicStorage: true
         continue-on-error: true
 
   # ─────────────────────────────────────────────
-  # STAGE 4 — Package Artifact for CD
+  # STAGE 4 — Package release artifact for CD
   # ─────────────────────────────────────────────
   package:
     name: Package Artifact
@@ -314,19 +316,22 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-${{ github.sha }}
-          path: build/
+          path: dist/
 
-      - name: Tag and re-upload SHA-stamped artifact
+      - name: Re-upload as SHA-tagged release artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ github.sha }}
-          path: build/
+          path: dist/
           retention-days: 30
 
-      - name: Summary
+      - name: CI summary
+        working-directory: ${{ github.workspace }}
         run: |
           echo "## CI Pipeline Complete ✅" >> $GITHUB_STEP_SUMMARY
-          echo "- Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Artifact: \`release-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- CD pipeline will now trigger deployment." >> $GITHUB_STEP_SUMMARY
-
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Artifact | \`release-${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Framework | Vite + React + TypeScript |" >> $GITHUB_STEP_SUMMARY
+          echo "| Output dir | \`dist/\` |" >> $GITHUB_STEP_SUMMARY

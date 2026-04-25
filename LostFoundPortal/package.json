@@ -6,8 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "preview": "vite preview",
-    "lint": "eslint src --ext .ts,.tsx,.js,.jsx --max-warnings=0"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -68,8 +67,11 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.1.12",
+    "@typescript-eslint/eslint-plugin": "^8.59.0",
+    "@typescript-eslint/parser": "^8.59.0",
     "@vitejs/plugin-react": "4.7.0",
     "eslint": "^8.57.1",
+    "eslint-plugin-react": "^7.37.5",
     "tailwindcss": "4.1.12",
     "vite": "^6.3.5"
   },

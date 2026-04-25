@@ -23,7 +23,6 @@ export function ReportFound() {
     contactPreference: '',
   });
   const [image, setImage] = useState<string>('');
-  const [imageFile, setImageFile] = useState<File | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const categories: { value: Category; label: string }[] = [
@@ -51,7 +50,6 @@ export function ReportFound() {
         setErrors({ ...errors, image: 'Image must be less than 5MB' });
         return;
       }
-      setImageFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setImage(reader.result as string);
@@ -63,7 +61,6 @@ export function ReportFound() {
 
   const removeImage = () => {
     setImage('');
-    setImageFile(null);
   };
 
   const validate = () => {

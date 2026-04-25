@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite'
+// import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import tailwindcss from '@tailwindcss/vite'
@@ -36,4 +37,10 @@ export default defineConfig({
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
   base: '/UniLostAndFoundPortal/',
+  test: {
+    environment: 'jsdom',
+    coverage: {
+      provider: 'v8'
+    }
+  }
 })

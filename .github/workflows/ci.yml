@@ -184,7 +184,7 @@ jobs:
         run: npm ci
 
       - name: Run tests with coverage
-        run: npm test -- --coverage --watchAll=false
+        run: npm run test:coverage
         env:
           CI: true
         # Enforce thresholds by adding to package.json:

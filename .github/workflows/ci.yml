@@ -137,7 +137,7 @@ jobs:
         # Use the project-local ESLint to respect the version in package.json
         # and avoid npx pulling a mismatched version (e.g. v10 vs .eslintrc.* config)
         # run: ./node_modules/.bin/eslint src --ext .ts,.tsx,.js,.jsx --max-warnings=0
-        run: npx eslint src --ext .ts,.tsx,.js,.jsx --max-warnings=0
+        run: npm run lint
 
       - name: Build application (Vite)
         run: npm run build

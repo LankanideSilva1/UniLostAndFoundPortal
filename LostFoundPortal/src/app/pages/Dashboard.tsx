@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
 import { Package, Inbox, CheckCircle2, XCircle, Clock, Eye } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import {
@@ -86,7 +86,6 @@ export function Dashboard() {
   };
 
   const activeItems = myItems.filter(item => item.status === 'active');
-  const claimedItems = myItems.filter(item => item.status === 'claimed');
   const pendingClaimsOnMyItems = claimsOnMyItems.filter(claim => claim.status === 'pending');
 
   const categoryLabels: Record<string, string> = {

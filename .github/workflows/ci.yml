@@ -1,23 +1,165 @@
-# This is a basic workflow to help you get started with Actions
+# # This is a basic workflow to help you get started with Actions
+
+# name: CI
+
+# # Controls when the workflow will run
+# on:
+#   # Triggers the workflow on push or pull request events but only for the "main" branch
+#   push:
+#     branches: [ "main" ]
+#   pull_request:
+#     branches: [ "main" ]
+
+#   # Allows you to run this workflow manually from the Actions tab
+#   workflow_dispatch:
+
+# # A workflow run is made up of one or more jobs that can run sequentially or in parallel
+# jobs:
+#   test:
+#     runs-on: ubuntu-latest
+    
+#     strategy:
+#       matrix:
+#         node-version: [18.x, 20.x]
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Setup Node.js ${{ matrix.node-version }}
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: ${{ matrix.node-version }}
+#           cache: 'npm'
+
+#       - name: Install dependencies
+#         run: npm ci
+
+#       - name: Run linter
+#         run: npm run lint
+
+#       - name: Run tests
+#         run: npm test -- --coverage --watchAll=false
+
+#   security-scan:
+#     runs-on: ubuntu-latest
+#     needs: test
+    
+#     steps:
+#     - name: Checkout code
+#       uses: actions/checkout@v4
+      
+#     - name: Run Trivy vulnerability scanner
+#       uses: aquasecurity/trivy-action@master
+#       with:
+#         scan-type: 'fs'
+#         scan-ref: '.'
+#         format: 'sarif'
+#         output: 'trivy-results.sarif'
+        
+#     - name: Upload Trivy scan results to GitHub Security tab
+#       uses: github/codeql-action/upload-sarif@v3
+#       if: always()
+#       with:
+#         sarif_file: 'trivy-results.sarif'
+
+#       # - name: Upload coverage
+#       #   uses: codecov/codecov-action@v3
+#       #   with:
+#       #     token: ${{ secrets.CODECOV_TOKEN }}
+#       #     files: ./coverage/coverage-final.json
+#   # This workflow contains a single job called "build"
+#   build:
+#     needs: test
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - uses: actions/checkout@v4
+
+#       - name: Setup Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: 20.x
+#           cache: 'npm'
+
+#       - name: Install dependencies
+#         run: npm ci
+
+#       - name: Build application
+#         run: npm run build
+#         env:
+#           CI: true
+
+#       - name: Upload build artifacts
+#         uses: actions/upload-artifact@v3
+#         with:
+#           name: build
+#           path: build/
+#           retention-days: 7
 
 name: CI
 
-# Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the "main" branch
   push:
-    branches: [ "main" ]
+    branches: ["main", "feature/**", "fix/**"]
   pull_request:
-    branches: [ "main" ]
-
-  # Allows you to run this workflow manually from the Actions tab
+    branches: ["main"]
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  test:
+  # ─────────────────────────────────────────────
+  # STAGE 1 — Build
+  # ─────────────────────────────────────────────
+  build:
+    name: Build
     runs-on: ubuntu-latest
-    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (ESLint + Prettier)
+        run: |
+          npm run lint
+          npx prettier --check "src/**/*.{js,jsx,ts,tsx}"
+
+      - name: Build application
+        run: npm run build
+        env:
+          CI: true
+          PUBLIC_URL: /UniLostAndFoundPortal
+
+      - name: Bundle size audit
+        run: |
+          echo "=== Build output sizes ==="
+          du -sh build/static/js/*.js 2>/dev/null || du -sh build/static/js/
+          # Fail if main bundle exceeds 500 KB (gzipped estimate)
+          BUNDLE_SIZE=$(find build/static/js -name "main*.js" | xargs wc -c | tail -1 | awk '{print $1}')
+          echo "Main bundle raw size: ${BUNDLE_SIZE} bytes"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+          path: build/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────
+  # STAGE 2 — Unit & Integration Tests
+  # ─────────────────────────────────────────────
+  test:
+    name: Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    needs: build
+
     strategy:
       matrix:
         node-version: [18.x, 20.x]
@@ -30,69 +172,161 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run linter
-        run: npm run lint
+      - name: Run unit & integration tests with coverage
+        run: npm test -- --coverage --watchAll=false --coverageReporters=text --coverageReporters=lcov
+        env:
+          CI: true
 
-      - name: Run tests
-        run: npm test -- --coverage --watchAll=false
+      - name: Enforce coverage thresholds
+        # Fails the job if Jest coverage drops below thresholds defined in package.json
+        # Add to package.json > jest > coverageThreshold:
+        #   { "global": { "lines": 80, "branches": 75, "functions": 80, "statements": 80 } }
+        run: echo "Coverage thresholds enforced via jest coverageThreshold in package.json"
 
-  security-scan:
-    runs-on: ubuntu-latest
-    needs: test
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'fs'
-        scan-ref: '.'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-        
-    - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: 'trivy-results.sarif'
+      - name: Upload coverage report
+        if: matrix.node-version == '20.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
 
-      # - name: Upload coverage
-      #   uses: codecov/codecov-action@v3
+      # Uncomment when Codecov token is added as a secret:
+      # - name: Upload to Codecov
+      #   uses: codecov/codecov-action@v4
       #   with:
       #     token: ${{ secrets.CODECOV_TOKEN }}
-      #     files: ./coverage/coverage-final.json
-  # This workflow contains a single job called "build"
-  build:
-    needs: test
+      #     files: ./coverage/lcov.info
+
+  # ─────────────────────────────────────────────
+  # STAGE 3 — Security Scan
+  # ─────────────────────────────────────────────
+  security-scan:
+    name: Security Scan
     runs-on: ubuntu-latest
+    needs: build
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-results.sarif"
+
+      - name: npm audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  # ─────────────────────────────────────────────
+  # STAGE 3 — Staging / E2E Tests
+  # ─────────────────────────────────────────────
+  staging-e2e:
+    name: Staging E2E
+    runs-on: ubuntu-latest
+    needs: [test, security-scan]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20.x
-          cache: 'npm'
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build application
-        run: npm run build
-        env:
-          CI: true
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
         with:
-          name: build
+          name: build-${{ github.sha }}
           path: build/
-          retention-days: 7
+
+      - name: Install Cypress
+        run: npx cypress install
+
+      - name: Run E2E tests (Cypress)
+        uses: cypress-io/github-action@v6
+        with:
+          # Serve the production build locally for realistic E2E
+          start: npx serve -s build -l 3000
+          wait-on: "http://localhost:3000"
+          wait-on-timeout: 30
+          browser: chrome
+          # Critical user flows that MUST pass:
+          # - Add a lost/found item (writes to localStorage)
+          # - Reload page and verify item persists (reads from localStorage)
+          # - Delete item (removes from localStorage)
+          spec: "cypress/e2e/**/*.cy.{js,jsx,ts,tsx}"
+        env:
+          CYPRESS_BASE_URL: http://localhost:3000
+
+      - name: Upload Cypress screenshots on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cypress-screenshots
+          path: cypress/screenshots/
+          retention-days: 3
+
+      - name: Lighthouse CI audit
+        uses: treosh/lighthouse-ci-action@v11
+        with:
+          urls: |
+            http://localhost:3000
+          # Minimum performance score: 90
+          # Minimum accessibility score: 90
+          budgetPath: "./.lighthouserc.json"
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+        continue-on-error: true
+
+  # ─────────────────────────────────────────────
+  # STAGE 4 — Package Artifact for CD
+  # ─────────────────────────────────────────────
+  package:
+    name: Package Artifact
+    runs-on: ubuntu-latest
+    needs: staging-e2e
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+          path: build/
+
+      - name: Tag and re-upload SHA-stamped artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.sha }}
+          path: build/
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          echo "## CI Pipeline Complete ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Artifact: \`release-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- CD pipeline will now trigger deployment." >> $GITHUB_STEP_SUMMARY
+

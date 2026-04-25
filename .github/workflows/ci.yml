@@ -198,7 +198,48 @@ jobs:
           path: LostFoundPortal/cypress/screenshots/
           retention-days: 3
 
-      - name: Lighthouse CI audit
+      # - name: Lighthouse CI audit
+      #   uses: treosh/lighthouse-ci-action@v11
+      #   with:
+      #     urls: |
+      #       http://localhost:3000
+      #     budgetPath: "LostFoundPortal/.lighthouserc.json"
+      #     uploadArtifacts: true
+      #     temporaryPublicStorage: true
+      #   continue-on-error: true
+
+  lighthouse:
+    name: Lighthouse Audit
+    runs-on: ubuntu-latest
+    needs: [test, security-scan]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: "npm"
+          cache-dependency-path: LostFoundPortal/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+          path: LostFoundPortal/dist/
+
+      - name: Start server and wait for it
+        run: |
+          npx serve -s dist -l 3000 &
+          echo "SERVER_PID=$!" >> $GITHUB_ENV
+          npx wait-on http://localhost:3000 --timeout 30000
+
+      - name: Run Lighthouse CI
         uses: treosh/lighthouse-ci-action@v11
         with:
           urls: |
@@ -207,6 +248,10 @@ jobs:
           uploadArtifacts: true
           temporaryPublicStorage: true
         continue-on-error: true
+
+      - name: Stop server
+        if: always()
+        run: kill $SERVER_PID 2>/dev/null || true
 
   # ─────────────────────────────────────────────
   # STAGE 4 — Package release artifact for CD

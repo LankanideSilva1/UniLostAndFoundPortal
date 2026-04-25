@@ -135,7 +135,7 @@ jobs:
 
       - name: Lint (ESLint + Prettier)
         run: |
-          npm run lint
+          npx eslint "src/**/*.{ts,tsx,js,jsx}" --max-warnings=0
           npx prettier --check "src/**/*.{ts,tsx,js,jsx}"
 
       - name: Build application (Vite)

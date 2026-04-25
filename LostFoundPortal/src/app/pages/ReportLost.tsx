@@ -22,7 +22,6 @@ export function ReportLost() {
     date: '',
   });
   const [image, setImage] = useState<string>('');
-  const [imageFile, setImageFile] = useState<File | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const categories: { value: Category; label: string }[] = [
@@ -43,7 +42,6 @@ export function ReportLost() {
         setErrors({ ...errors, image: 'Image must be less than 5MB' });
         return;
       }
-      setImageFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setImage(reader.result as string);
@@ -55,7 +53,6 @@ export function ReportLost() {
 
   const removeImage = () => {
     setImage('');
-    setImageFile(null);
   };
 
   const validate = () => {
